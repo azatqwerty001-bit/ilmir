@@ -83,3 +83,16 @@ class DiagnosticTests(SimpleTestCase):
             self.assertEqual(caught.exception.kind,kind)
             self.assertNotIn(token,explain_error(caught.exception))
             self.assertNotIn(token,str(caught.exception))
+
+class TLSContextTests(SimpleTestCase):
+    def test_native_store_keeps_certificate_verification(self):
+        import ssl
+        api=TelegramAPI('123456:'+'x'*30)
+        self.assertEqual(api.context.verify_mode,ssl.CERT_REQUIRED)
+        self.assertTrue(api.context.check_hostname)
+        class Response:
+            def __enter__(self):return io.StringIO('{"ok":true,"result":{"username":"test_bot"}}')
+            def __exit__(self,*args):pass
+        with patch('cafe.telegram_bot.urlopen',return_value=Response()) as request:
+            self.assertEqual(api.call('getMe')['username'],'test_bot')
+        self.assertIs(request.call_args.kwargs['context'],api.context)

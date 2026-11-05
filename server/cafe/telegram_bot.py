@@ -5,19 +5,23 @@ from urllib.request import Request,urlopen
 from urllib.error import HTTPError,URLError
 from datetime import datetime
 from zoneinfo import ZoneInfo
+import truststore
 
 KEYBOARD={'keyboard':[[{'text':'☕ Меню'},{'text':'🍂 Сезонное'}],[{'text':'📍 Контакты'},{'text':'ℹ️ Помощь'}]],'resize_keyboard':True,'is_persistent':True}
 class TelegramError(Exception):
-    def __init__(self,code=0,retry_after=5,kind='network'):
-        self.code=code;self.kind=kind;self.retry_after=min(max(retry_after,1),120);super().__init__(f'Telegram API error {code} ({kind})')
+    def __init__(self,code=0,retry_after=5,kind='network',certificate_code=None):
+        self.code=code;self.kind=kind;self.certificate_code=certificate_code;self.retry_after=min(max(retry_after,1),120);super().__init__(f'Telegram API error {code} ({kind})')
 class TelegramAPI:
     def __init__(self,token):
         if not re.fullmatch(r'\d{5,20}:[A-Za-z0-9_-]{20,}',token):raise ValueError('Токен имеет неверный формат. Скопируйте его целиком из BotFather.')
         self.token=token
+        # Windows: CryptoAPI; macOS: Security framework; Linux: системные CA.
+        # CERT_REQUIRED и проверка имени сервера остаются включёнными.
+        self.context=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     def call(self,method,payload=None):
         request=Request('https://api.telegram.org/bot'+self.token+'/'+method,data=json.dumps(payload or {}).encode(),headers={'Content-Type':'application/json'})
         try:
-            with urlopen(request,timeout=45 if method=='getUpdates' else 15) as response:data=json.load(response)
+            with urlopen(request,timeout=45 if method=='getUpdates' else 15,context=self.context) as response:data=json.load(response)
         except HTTPError as exc:
             try:data=json.loads(exc.read())
             except (ValueError,OSError):data={}
@@ -25,7 +29,7 @@ class TelegramAPI:
         except (URLError,TimeoutError,OSError,ValueError) as exc:
             reason=getattr(exc,'reason',exc)
             kind='tls' if isinstance(reason,(ssl.SSLError,ssl.CertificateError)) else 'timeout' if isinstance(reason,(TimeoutError,socket.timeout)) else 'dns' if isinstance(reason,socket.gaierror) else 'response' if isinstance(reason,ValueError) else 'network'
-            raise TelegramError(kind=kind) from None
+            raise TelegramError(kind=kind,certificate_code=getattr(reason,'verify_code',None)) from None
         if not data.get('ok'):raise TelegramError(data.get('error_code',0),data.get('parameters',{}).get('retry_after',5))
         return data['result']
 
@@ -41,7 +45,11 @@ def explain_error(error):
         'response':'Получен неожиданный ответ вместо Telegram API. Проверьте настройки сети или прокси.',
         'network':'Не удалось установить соединение с api.telegram.org. Проверьте интернет, настройки прокси и правила доступа для Python. Токен пока не удалось проверить.'
     }
-    return messages.get(error.kind,messages['network'])
+    result=messages.get(error.kind,messages['network'])
+    if error.kind=='tls':
+        result+=' Используется системное хранилище сертификатов. Если ошибка повторяется, проверьте настройки HTTPS-фильтрации у антивируса или прокси, не отключая защиту.'
+        if isinstance(error.certificate_code,int):result+=' Код проверки сертификата: '+str(error.certificate_code)+'.'
+    return result
 
 def load_token(state_dir):
     token=os.environ.get('TELEGRAM_BOT_TOKEN','').strip()
