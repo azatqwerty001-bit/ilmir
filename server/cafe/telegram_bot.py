@@ -1,5 +1,5 @@
 """Telegram long polling, стандартная библиотека; секреты не попадают в журнал."""
-import hashlib,json,os,re,time
+import hashlib,json,os,re,time,ssl,socket
 from pathlib import Path
 from urllib.request import Request,urlopen
 from urllib.error import HTTPError,URLError
@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 
 KEYBOARD={'keyboard':[[{'text':'☕ Меню'},{'text':'🍂 Сезонное'}],[{'text':'📍 Контакты'},{'text':'ℹ️ Помощь'}]],'resize_keyboard':True,'is_persistent':True}
 class TelegramError(Exception):
-    def __init__(self,code=0,retry_after=5):self.code=code;self.retry_after=min(max(retry_after,1),120);super().__init__(f'Telegram API error {code}')
+    def __init__(self,code=0,retry_after=5,kind='network'):
+        self.code=code;self.kind=kind;self.retry_after=min(max(retry_after,1),120);super().__init__(f'Telegram API error {code} ({kind})')
 class TelegramAPI:
     def __init__(self,token):
         if not re.fullmatch(r'\d{5,20}:[A-Za-z0-9_-]{20,}',token):raise ValueError('Токен имеет неверный формат. Скопируйте его целиком из BotFather.')
@@ -16,14 +17,31 @@ class TelegramAPI:
     def call(self,method,payload=None):
         request=Request('https://api.telegram.org/bot'+self.token+'/'+method,data=json.dumps(payload or {}).encode(),headers={'Content-Type':'application/json'})
         try:
-            with urlopen(request,timeout=45) as response:data=json.load(response)
+            with urlopen(request,timeout=45 if method=='getUpdates' else 15) as response:data=json.load(response)
         except HTTPError as exc:
             try:data=json.loads(exc.read())
             except (ValueError,OSError):data={}
             raise TelegramError(exc.code,data.get('parameters',{}).get('retry_after',5)) from None
-        except (URLError,TimeoutError,OSError,ValueError):raise TelegramError() from None
+        except (URLError,TimeoutError,OSError,ValueError) as exc:
+            reason=getattr(exc,'reason',exc)
+            kind='tls' if isinstance(reason,(ssl.SSLError,ssl.CertificateError)) else 'timeout' if isinstance(reason,(TimeoutError,socket.timeout)) else 'dns' if isinstance(reason,socket.gaierror) else 'response' if isinstance(reason,ValueError) else 'network'
+            raise TelegramError(kind=kind) from None
         if not data.get('ok'):raise TelegramError(data.get('error_code',0),data.get('parameters',{}).get('retry_after',5))
         return data['result']
+
+def explain_error(error):
+    if error.code in (401,404):return 'Telegram отклонил токен (код '+str(error.code)+'). Запустите reset-bot-token-windows.bat и вставьте действующий токен целиком из BotFather.'
+    if error.code==409:return 'Бот уже запущен в другом окне или на сервере (409). Оставьте только один запуск.'
+    if error.code==429:return 'Telegram временно ограничил запросы (429). Подождите '+str(error.retry_after)+' секунд и повторите запуск.'
+    if error.code:return 'Сервер или сетевой посредник вернул HTTP '+str(error.code)+'. Это не доказывает ошибку токена. Проверьте доступ к api.telegram.org.'
+    messages={
+        'tls':'Не прошла проверка сертификата HTTPS. Проверьте дату и время Windows и обновления сертификатов. Не отключайте проверку TLS.',
+        'timeout':'Telegram не ответил за отведённое время. Проверьте соединение и доступ к api.telegram.org; затем повторите запуск.',
+        'dns':'Компьютер не смог найти адрес api.telegram.org (ошибка DNS). Проверьте интернет и настройки DNS.',
+        'response':'Получен неожиданный ответ вместо Telegram API. Проверьте настройки сети или прокси.',
+        'network':'Не удалось установить соединение с api.telegram.org. Проверьте интернет, настройки прокси и правила доступа для Python. Токен пока не удалось проверить.'
+    }
+    return messages.get(error.kind,messages['network'])
 
 def load_token(state_dir):
     token=os.environ.get('TELEGRAM_BOT_TOKEN','').strip()

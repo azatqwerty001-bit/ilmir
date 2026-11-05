@@ -7,7 +7,9 @@ env=os.environ.copy();env['DJANGO_DEBUG']='1'
 state=Path(env.get('CAFE_DATA_DIR',str(root.parent/'.ilmir-production')))
 state.mkdir(parents=True,exist_ok=True)
 if sys.version_info<(3,10):raise SystemExit('Нужен Python 3.10 или новее.')
-def run(args):subprocess.run(args,cwd=root,env=env,check=True)
+def run(args):
+    result=subprocess.run(args,cwd=root,env=env)
+    if result.returncode:raise SystemExit(result.returncode)
 if not python.exists():subprocess.run([sys.executable,'-m','venv',str(venv)],check=True)
 run([str(python),'-m','pip','install','-r','server/requirements.txt'])
 run([str(python),'server/manage.py','migrate','--noinput'])

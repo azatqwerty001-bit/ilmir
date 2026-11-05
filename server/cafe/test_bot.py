@@ -67,3 +67,19 @@ class TransportTests(SimpleTestCase):
         with patch('cafe.telegram_bot.TelegramAPI') as factory:
             factory.return_value.call.side_effect=[{'username':'demo'},{'url':'https://existing.example'}]
             with self.assertRaisesMessage(ValueError,'webhook'):run_bot('test-token',lambda:{},'/tmp',lambda text:None)
+
+class DiagnosticTests(SimpleTestCase):
+    def test_distinguishes_token_and_network_without_secret(self):
+        import ssl,socket
+        from .telegram_bot import explain_error
+        self.assertIn('отклонил токен',explain_error(TelegramError(401)))
+        self.assertIn('сертификата',explain_error(TelegramError(kind='tls')))
+        self.assertIn('DNS',explain_error(TelegramError(kind='dns')))
+        self.assertIn('пока не удалось проверить',explain_error(TelegramError()))
+        token='123456:'+'x'*30
+        for reason,kind in [(ssl.SSLError('secret '+token),'tls'),(socket.gaierror('secret '+token),'dns'),(TimeoutError(token),'timeout')]:
+            with patch('cafe.telegram_bot.urlopen',side_effect=URLError(reason)):
+                with self.assertRaises(TelegramError) as caught:TelegramAPI(token).call('getMe')
+            self.assertEqual(caught.exception.kind,kind)
+            self.assertNotIn(token,explain_error(caught.exception))
+            self.assertNotIn(token,str(caught.exception))
