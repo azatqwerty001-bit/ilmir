@@ -1,2 +1,7 @@
 __pycache__/
 *.pyc
+server/public_static/
+server/staticfiles/
+*.sqlite3
+.env
+.cafe-venv/

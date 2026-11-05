@@ -1,0 +1,9 @@
+.git
+**/__pycache__
+**/*.pyc
+.env
+.cafe-venv
+server/public_static
+server/staticfiles
+*.sqlite3
+assets/*.jpg

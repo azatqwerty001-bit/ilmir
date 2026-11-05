@@ -4,7 +4,7 @@
     const response = await fetch('menu-data.json', {cache: 'no-cache'});
     if (!response.ok) throw new Error('Menu unavailable');
     let data = await response.json();
-    if(new URLSearchParams(location.search).get('preview')==='1'){
+    if(!data.serverManaged && new URLSearchParams(location.search).get('preview')==='1'){
       try{const saved=localStorage.getItem('cafe-menu-draft:'+new URL('.',location.href).pathname);if(saved)data=JSON.parse(saved);}catch{}
       const notice=document.createElement('div');notice.className='preview-notice';notice.textContent='Предпросмотр вашего черновика. Публичный сайт не изменён. ';
       const back=document.createElement('a');back.href='admin/';back.textContent='Вернуться к редактору';notice.append(back);document.body.prepend(notice);
