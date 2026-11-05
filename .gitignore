@@ -5,3 +5,4 @@ server/staticfiles/
 *.sqlite3
 .env
 .cafe-venv/
+*telegram-token*
