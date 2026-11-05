@@ -85,7 +85,7 @@ class Handler(BaseHTTPRequestHandler):
    if not self.session():return self.send(401,{'error':'Войдите в админку'})
    return self.send(200,export(read_data()),'application/zip')
   if path=='/menu-data.json':return self.send(200,read_data())
-  allowed={'/':'index.html','/index.html':'index.html','/menu.html':'menu.html','/contacts.html':'contacts.html','/style.css':'style.css','/script.js':'script.js','/menu-render.js':'menu-render.js','/admin/':'admin/index.html','/admin':'admin/index.html','/admin/admin.js':'admin/admin.js','/admin/admin.css':'admin/admin.css'}
+  allowed={'/':'index.html','/index.html':'index.html','/menu.html':'menu.html','/contacts.html':'contacts.html','/style.css':'style.css','/script.js':'script.js','/menu-render.js':'menu-render.js','/admin/':'admin/index.html','/admin':'admin/index.html','/admin/admin.js':'admin/admin.js','/admin/admin.css':'admin/admin.css','/admin/jszip.min.js':'admin/jszip.min.js','/admin/demo-export.js':'admin/demo-export.js'}
   name=allowed.get(path)
   if path.startswith('/assets/') and re.fullmatch(r'/assets/[a-z0-9-]+\.(webp|svg)',path):name=path[1:]
   if not name or not (ROOT/name).is_file():return self.send(404,{'error':'Не найдено'})

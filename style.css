@@ -13,3 +13,4 @@ nav a[aria-current="page"]{font-weight:bold;text-decoration:underline;text-under
 body:not(.js-ready) .contact-actions button{display:none}
 :root{--muted:#575e51}.home-season>p:not(.eyebrow){color:#505747}.skip-link{position:fixed;top:8px;left:8px;z-index:100;background:var(--paper);color:var(--ink);padding:12px 18px;transform:translateY(-160%)}.skip-link:focus{transform:translateY(0)}.menu-toggle,.dialog-close{min-width:44px;min-height:44px}.contact-link{min-height:44px}
 .season-banner[hidden],.home-season[hidden]{display:none}.filters button:disabled{opacity:.55;cursor:default}
+.preview-notice{background:#f0dab2;color:#302d24;padding:15px 20px;font-size:13px;text-align:center}.preview-notice a{font-weight:bold;text-underline-offset:4px}

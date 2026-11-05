@@ -3,7 +3,12 @@
   try {
     const response = await fetch('menu-data.json', {cache: 'no-cache'});
     if (!response.ok) throw new Error('Menu unavailable');
-    const data = await response.json();
+    let data = await response.json();
+    if(new URLSearchParams(location.search).get('preview')==='1'){
+      try{const saved=localStorage.getItem('cafe-menu-draft:'+new URL('.',location.href).pathname);if(saved)data=JSON.parse(saved);}catch{}
+      const notice=document.createElement('div');notice.className='preview-notice';notice.textContent='Предпросмотр вашего черновика. Публичный сайт не изменён. ';
+      const back=document.createElement('a');back.href='admin/';back.textContent='Вернуться к редактору';notice.append(back);document.body.prepend(notice);
+    }
     const month = Number(new Intl.DateTimeFormat('en', {timeZone:'Europe/Moscow',month:'numeric'}).format(new Date()));
     const season = data.season === 'auto' ? (month >= 5 && month <= 9 ? 'summer' : 'winter') : data.season;
     const visible = data.items.filter(i => i.visible && (i.category !== 'seasonal' || i.season === 'all' || i.season === season));
