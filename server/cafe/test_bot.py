@@ -56,11 +56,11 @@ class TransportTests(SimpleTestCase):
                 self.sent.append(payload);return {}
         with tempfile.TemporaryDirectory() as directory:
             first=Poller()
-            with patch('cafe.telegram_bot.TelegramAPI',return_value=first):
+            with patch('cafe.telegram_bot.TelegramAPI',return_value=first), patch('cafe.orders.deliver_notices'):
                 with self.assertRaises(KeyboardInterrupt):run_bot('test-token',lambda:{},directory,lambda text:None)
             saved=list(Path(directory).glob('telegram-offset-*.json'));self.assertEqual(json.loads(saved[0].read_text())['offset'],11)
             second=Poller()
-            with patch('cafe.telegram_bot.TelegramAPI',return_value=second):
+            with patch('cafe.telegram_bot.TelegramAPI',return_value=second), patch('cafe.orders.deliver_notices'):
                 with self.assertRaises(KeyboardInterrupt):run_bot('test-token',lambda:{},directory,lambda text:None)
             self.assertEqual(second.offsets[0],11)
             self.assertNotIn('test-token',saved[0].read_text())

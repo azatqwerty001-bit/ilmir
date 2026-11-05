@@ -7,7 +7,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 import truststore
 
-KEYBOARD={'keyboard':[[{'text':'☕ Меню'},{'text':'🍂 Сезонное'}],[{'text':'📍 Контакты'},{'text':'ℹ️ Помощь'}]],'resize_keyboard':True,'is_persistent':True}
+KEYBOARD={'keyboard':[[{'text':'☕ Меню'},{'text':'🍂 Сезонное'}],[{'text':'🛍 Сделать заказ'},{'text':'🛒 Корзина'}],[{'text':'📋 Мои заказы'},{'text':'📍 Контакты'}],[{'text':'ℹ️ Помощь'}]],'resize_keyboard':True,'is_persistent':True}
 class TelegramError(Exception):
     def __init__(self,code=0,retry_after=5,kind='network',certificate_code=None):
         self.code=code;self.kind=kind;self.certificate_code=certificate_code;self.retry_after=min(max(retry_after,1),120);super().__init__(f'Telegram API error {code} ({kind})')
@@ -77,7 +77,7 @@ def chunks(text,limit=3500):
 def response_for(text,data):
     command=text.strip().split('@',1)[0] if text.strip().startswith('/') else text.strip()
     if command.split(' ',1)[0]=='/start':
-        return 'Добро пожаловать в «Тёплый угол»!\nВыберите меню, сезонные предложения или контакты кнопками ниже.\n\nЭто учебная кофейня: адрес, рецептуры и цены вымышлены. Онлайн-заказы пока не принимаются.'
+        return 'Добро пожаловать в «Тёплый угол»!\nВыберите меню, сезонные предложения или контакты кнопками ниже.\n\nЭто учебная кофейня: адрес, рецептуры и цены вымышлены. Можно оформить учебный заказ без оплаты. Настоящий кофе не готовится.'
     if command in ('/menu','☕ Меню','Меню','/seasonal','🍂 Сезонное','Сезонное'):
         seasonal=command in ('/seasonal','🍂 Сезонное','Сезонное')
         items=current_items(data)
@@ -93,13 +93,39 @@ def response_for(text,data):
         return '\n'.join(lines)
     if command in ('/contacts','📍 Контакты','Контакты'):
         return 'Тёплый угол\nКазань, ул. Уютная, 12\n\nПн–Пт: 08:00–21:00\nСб–Вс: 09:00–22:00\n\nWi-Fi · кофе с собой · рады питомцам\n\nАдрес вымышленный. Телефон, соцсеть и реальный маршрут пока не подключены.'
-    return 'Доступные команды:\n/start — начало\n/menu — меню и цены\n/seasonal — активное сезонное предложение\n/contacts — адрес и расписание\n/help — помощь\n\nМожно просто нажимать кнопки под сообщением.'
+    return 'Доступные команды:\n/start — начало\n/menu — меню и цены\n/seasonal — активное сезонное предложение\n/contacts — адрес и расписание\n/order — сделать учебный заказ\n/cart — корзина\n/orders — мои заказы\n/cancel — отменить оформление\n/help — помощь\n\nМожно просто нажимать кнопки под сообщением.'
 
-def handle_update(api,update,provider):
+def handle_update(api,update,provider,bot_key='default'):
+    callback=update.get('callback_query')
+    if callback:
+        if callback.get('message',{}).get('chat',{}).get('type')!='private':return
+        if callback.get('from',{}).get('id')!=callback['message']['chat']['id']:return
+        from .orders import order_reply
+        try:api.call('answerCallbackQuery',{'callback_query_id':callback['id']})
+        except TelegramError as error:
+            if error.code!=400:raise
+        response=order_reply(update,provider,bot_key)
+        if response:
+            parts=list(chunks(response['text']))
+            for n,part in enumerate(parts):
+                payload={'chat_id':callback['message']['chat']['id'],'text':part}
+                if n==len(parts)-1:payload['reply_markup']=response['reply_markup']
+                api.call('sendMessage',payload)
+        return
     message=update.get('message',{})
     # Учебный бот отвечает в личных сообщениях; группы и редактирования пропускает.
     if message.get('chat',{}).get('type')!='private':return
     chat_id=message['chat']['id'];text=message.get('text','')
+    action=text.strip().split('@',1)[0]
+    if action in ('/order','/cart','/orders','/cancel','🛍 Сделать заказ','🛒 Корзина','📋 Мои заказы','Отменить оформление'):
+        from .orders import order_reply
+        response=order_reply(update,provider,bot_key)
+        parts=list(chunks(response['text']))
+        for n,part in enumerate(parts):
+            payload={'chat_id':chat_id,'text':part}
+            if n==len(parts)-1:payload['reply_markup']=response['reply_markup']
+            api.call('sendMessage',payload)
+        return
     answer=response_for(text,provider())
     for part in chunks(answer):api.call('sendMessage',{'chat_id':chat_id,'text':part,'reply_markup':KEYBOARD})
 
@@ -108,17 +134,20 @@ def run_bot(token,provider,state_dir,log=print):
     me=api.call('getMe')
     # Не удаляем webhook автоматически: это мог бы быть другой работающий сервер.
     if api.call('getWebhookInfo').get('url'):raise ValueError('У бота уже настроен webhook. Нужен отдельный токен для учебного запуска либо осознанное отключение старого сервера.')
-    identity=hashlib.sha256(token.encode()).hexdigest()[:16]
+    identity=hashlib.sha256(str(me.get('id',token.split(':',1)[0])).encode()).hexdigest()[:16]
     cursor=Path(state_dir)/('telegram-offset-'+identity+'.json')
     try:offset=int(json.loads(cursor.read_text())['offset'])
     except (OSError,ValueError,KeyError,TypeError):offset=0
     log('Бот подключён: @'+me['username']+'. Откройте его в Telegram и нажмите «Запустить».')
     log('Не закрывайте это окно. Для остановки нажмите Ctrl+C.')
+    from django.db import OperationalError
     while True:
         try:
-            updates=api.call('getUpdates',{'offset':offset,'timeout':25,'allowed_updates':['message']})
+            from .orders import deliver_notices
+            deliver_notices(api,identity)
+            updates=api.call('getUpdates',{'offset':offset,'timeout':10,'allowed_updates':['message','callback_query']})
             for update in updates:
-                try:handle_update(api,update,provider)
+                try:handle_update(api,update,provider,identity)
                 except TelegramError as exc:
                     if exc.code not in (400,403):raise
                     # Если получатель заблокировал бота, не застреваем на его обновлении.
@@ -129,3 +158,7 @@ def run_bot(token,provider,state_dir,log=print):
             if exc.code==409:raise ValueError('Этот бот уже запущен в другом окне или на другом сервере. Оставьте только один запуск.') from None
             log('Нет связи с Telegram или временный лимит. Повторяем подключение…')
             time.sleep(exc.retry_after)
+        except OperationalError as error:
+            if 'locked' not in str(error).lower():raise
+            log('База временно занята. Повторяем запрос…')
+            time.sleep(1)

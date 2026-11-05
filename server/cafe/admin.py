@@ -19,3 +19,26 @@ class SeasonAdmin(admin.ModelAdmin):
 
 from .forms import LimitedAdminAuthenticationForm
 admin.site.login_form=LimitedAdminAuthenticationForm
+
+from django.utils.html import format_html_join
+from .models import Order,OrderNotice
+class OrderNoticeInline(admin.TabularInline):
+    model=OrderNotice
+    extra=0
+    fields=['status','sent_at','attempts','error','permanent_failure']
+    readonly_fields=fields
+    def has_add_permission(self,request,obj=None):return False
+    def has_change_permission(self,request,obj=None):return False
+    def has_delete_permission(self,request,obj=None):return False
+@admin.register(Order)
+class OrderAdmin(admin.ModelAdmin):
+    list_display=['id','created','total','pickup','status']
+    list_filter=['status','created']
+    search_fields=['=id']
+    fields=['id','created','chat_id','order_lines','total','pickup','status']
+    readonly_fields=['id','created','chat_id','order_lines','total','pickup']
+    inlines=[OrderNoticeInline]
+    @admin.display(description='Состав заказа')
+    def order_lines(self,obj):return format_html_join('', '<p>{} × {} — {} ₽</p>',((i['name'],i['quantity'],i['quantity']*i['price']) for i in obj.lines))
+    def has_add_permission(self,request):return False
+    def has_delete_permission(self,request,obj=None):return False

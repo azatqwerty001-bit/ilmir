@@ -47,3 +47,56 @@ class MenuItem(models.Model):
                     img.verify()
                 self.image.seek(0)
             except Exception as exc:raise ValidationError({'image':'Загрузите корректное JPG, PNG или WebP до 25 мегапикселей'}) from exc
+
+class BotCart(models.Model):
+    bot_key=models.CharField(max_length=16)
+    chat_id=models.BigIntegerField()
+    items=models.JSONField(default=dict)
+    review=models.JSONField(default=dict)
+    updated=models.DateTimeField(auto_now=True)
+    class Meta:constraints=[models.UniqueConstraint(fields=['bot_key','chat_id'],name='unique_bot_cart')]
+
+class BotEvent(models.Model):
+    bot_key=models.CharField(max_length=16)
+    update_id=models.BigIntegerField()
+    reply=models.JSONField(default=dict)
+    created=models.DateTimeField(auto_now_add=True)
+    class Meta:constraints=[models.UniqueConstraint(fields=['bot_key','update_id'],name='unique_bot_update')]
+
+ORDER_STATUSES=[('new','Новый'),('accepted','Принят'),('ready','Готов'),('issued','Выдан'),('cancelled','Отменён')]
+ORDER_TRANSITIONS={'new':{'accepted','cancelled'},'accepted':{'ready','cancelled'},'ready':{'issued','cancelled'},'issued':set(),'cancelled':set()}
+class Order(models.Model):
+    bot_key=models.CharField(max_length=16)
+    chat_id=models.BigIntegerField('Telegram ID гостя')
+    confirmation=models.CharField(max_length=64,unique=True)
+    lines=models.JSONField('Состав заказа')
+    total=models.PositiveIntegerField('Сумма, ₽')
+    pickup=models.CharField('Самовывоз',max_length=100)
+    status=models.CharField('Статус',choices=ORDER_STATUSES,max_length=12,default='new')
+    created=models.DateTimeField('Создан',auto_now_add=True)
+    updated=models.DateTimeField(auto_now=True)
+    class Meta:ordering=['-created'];verbose_name='учебный заказ';verbose_name_plural='Заказы'
+    def __str__(self):return f'Заказ №{self.pk}'
+    def clean(self):
+        super().clean()
+        if self.pk:
+            previous=Order.objects.get(pk=self.pk).status
+            if self.status!=previous and self.status not in ORDER_TRANSITIONS.get(previous,set()):raise ValidationError({'status':'Недопустимый переход. Новый → Принят → Готов → Выдан; до выдачи можно отменить.'})
+    def save(self,*args,**kwargs):
+        from django.db import transaction
+        with transaction.atomic():
+            old=Order.objects.select_for_update().filter(pk=self.pk).first() if self.pk else None
+            if old and self.status!=old.status and self.status not in ORDER_TRANSITIONS.get(old.status,set()):raise ValidationError('Недопустимый переход статуса')
+            super().save(*args,**kwargs)
+            if old and old.status!=self.status:OrderNotice.objects.create(order=self,status=self.status)
+
+class OrderNotice(models.Model):
+    order=models.ForeignKey(Order,on_delete=models.CASCADE,related_name='notices')
+    status=models.CharField(max_length=12,choices=ORDER_STATUSES)
+    created=models.DateTimeField(auto_now_add=True)
+    sent_at=models.DateTimeField('Отправлено',null=True,blank=True)
+    attempts=models.PositiveIntegerField('Попыток',default=0)
+    retry_at=models.DateTimeField(null=True,blank=True)
+    error=models.CharField('Ошибка доставки',max_length=100,blank=True)
+    permanent_failure=models.BooleanField('Доставка невозможна',default=False)
+    class Meta:ordering=['created'];verbose_name='уведомление';verbose_name_plural='Уведомления'
