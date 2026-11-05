@@ -23,13 +23,13 @@ document.addEventListener('keydown', (event) => {
 });
 // Фильтр показывает позиции выбранной категории без перезагрузки страницы.
 const filterButtons = document.querySelectorAll('[data-filter]');
-const menuCards = document.querySelectorAll('[data-category]');
+
 filterButtons.forEach((button) => {
   button.addEventListener('click', () => {
     const category = button.dataset.filter;
     filterButtons.forEach((item) => item.setAttribute('aria-pressed', String(item === button)));
     let visibleCount = 0;
-    menuCards.forEach((card) => {
+    document.querySelectorAll('[data-category]').forEach((card) => {
       card.hidden = category !== 'all' && card.dataset.category !== category;
       if (!card.hidden) visibleCount += 1;
     });
@@ -50,8 +50,8 @@ document.querySelectorAll('[data-contact-demo]').forEach((button) => {
     contactDialog.showModal();
   });
 });
-// Переход к сезонной позиции сбрасывает фильтр, чтобы карточка была видна.
-const seasonalLink = document.querySelector('a[href="#seasonal-latte"]');
-if (seasonalLink) seasonalLink.addEventListener('click', () => {
-  document.querySelector('[data-filter="all"]').click();
+// Работает и после изменения сезонных позиций в админке.
+document.addEventListener('click', event => {
+  const link = event.target.closest('.season-banner a');
+  if (link) document.querySelector('[data-filter="all"]').click();
 });
